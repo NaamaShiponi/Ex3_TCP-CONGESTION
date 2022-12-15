@@ -10,8 +10,7 @@
 #include <sys/time.h>
 
 #define SERVER_PORT 2020
-#define BUFFER_SIZE 1024
-#define SIZE 1
+#define BUFFER_SIZE 8192
 
 int senderToServer(int ClentSocket, FILE *pfile);
 
@@ -91,7 +90,7 @@ int senderToServer(int ClentSocket, FILE *pfile)
 
     char msg[BUFFER_SIZE];
     int count = 0;
-    for (size_t i = 0; i < 10; i++)
+    for (size_t i = 0; i < 8; i++)
     {
         fread(msg, 1, sizeof(msg), pfile);
         int bytesSent = send(ClentSocket, msg, sizeof(msg), 0);
@@ -118,6 +117,7 @@ int senderToServer(int ClentSocket, FILE *pfile)
 
     // Receive data from server
     char bufferReply[BUFFER_SIZE] = {'\0'};
+    char authentication[] = "0011010001110100\0";
     int bytesReceived = recv(ClentSocket, bufferReply, BUFFER_SIZE, 0);
     if (bytesReceived == -1)
     {
@@ -129,9 +129,10 @@ int senderToServer(int ClentSocket, FILE *pfile)
         printf("peer has closed the TCP connection prior to recv().\n");
         return -1;
     }
-    else
+    if (0==strcmp(bufferReply, authentication))
     {
-        printf("received %d bytes from server: %s\n", bytesReceived, bufferReply);
+        printf("Authentication succeeded \n");
     }
+
     return 0;
 }

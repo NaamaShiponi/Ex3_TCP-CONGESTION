@@ -13,7 +13,9 @@
 #include <signal.h>
 
 #define SERVER_PORT 2020
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 8192
+
+int resvAndsend(struct sockaddr_in clientAddress, int serverSocket);
 
 typedef struct timeval time;
 
@@ -27,12 +29,6 @@ double getAmountOfTime(time starting_time, time ending_time)
 
 int main()
 {
-    int sendcount = 0;
-
-    time starting_time, ending_time;
-    double countTimeTCP = 0;
-    double countTimeCC = 0;
-    double count = 0;
 
     struct sockaddr_in serverAddress;
     memset(&serverAddress, 0, sizeof(serverAddress));
@@ -58,77 +54,10 @@ int main()
     struct sockaddr_in clientAddress;
     socklen_t clientAddressLen = sizeof(clientAddress);
 
-    gettimeofday(&starting_time, NULL); // start counting
-
-    for (size_t i = 0; i < 1; i++)
-    {
-        memset(&clientAddress, 0, sizeof(clientAddress));
-        clientAddressLen = sizeof(clientAddress); // TODO CHECKE
-        int clientSocket = accept(serverSocket, (struct sockaddr *)&clientAddress, &clientAddressLen);
-        if (clientSocket == -1)
-        {
-            printf("listen failed with error code : %d", errno);
-            // close the sockets
-            close(serverSocket);
-            return -1;
-        }
-
-        printf("get A new maseage from client\n");
-
-        char buffer[BUFFER_SIZE];
-        memset(buffer, 0, BUFFER_SIZE);
-        int bytesReceived;
-        for (size_t i = 0; i < 10; i++)
-        {
-            bytesReceived = recv(clientSocket, buffer, BUFFER_SIZE, 0);
-            if (bytesReceived < 0)
-                break;
-            sendcount++;
-        }
-
-        printf("sendcount: %d\n", sendcount);
-        if (bytesReceived == -1)
-        {
-            printf("recv failed with error code : %d\n", errno);
-            // close the sockets
-            close(serverSocket);
-            close(clientSocket);
-            return -1;
-        }
-
-        // Reply to client
-        char *message = "Welcome Naama shiponi and Ben dabush\n";
-        int messageLen = strlen(message) + 1;
-
-        int bytesSent = send(clientSocket, message, messageLen, 0);
-        if (bytesSent == -1)
-        {
-            printf("send() failed with error code : %d\n", errno);
-            close(serverSocket);
-            close(clientSocket);
-            return -1;
-        }
-        else if (bytesSent == 0)
-        {
-            printf("peer has closed the TCP connection prior to send().\n");
-        }
-        else if (bytesSent < messageLen)
-        {
-            printf("sent only %d bytes from the required %d.\n", messageLen, bytesSent);
-        }
-        else
-        {
-            printf("message was successfully sent.\n");
-        }
-        close(clientSocket);
-    }
-
-    gettimeofday(&ending_time, NULL); // stop counting
-    double current_time = getAmountOfTime(starting_time, ending_time);
-    countTimeTCP += current_time;
-    printf("total time = %f\n", countTimeTCP);
+    resvAndsend(clientAddress, serverSocket);
 
     printf("------------------------- SET TO CC ------------------------- \n");
+
     char *CC = "reno";
     socklen_t socklen = strlen(CC);
 
@@ -141,13 +70,33 @@ int main()
 
     listenResult = listen(serverSocket, 1);
 
-    gettimeofday(&starting_time, NULL); // start counting
+    int resvAndsendOutput=resvAndsend(clientAddress, serverSocket);
+    if(resvAndsendOutput==-1){
+        printf("error resvAndsend()\n");
+    }
 
+    close(serverSocket);
+    return 0;
+}
+
+
+
+
+
+int resvAndsend(struct sockaddr_in clientAddress, int serverSocket)
+{
+        char authentication[] = "0011010001110100";
+        time starting_time, ending_time;
+        double countTimeTCP = 0;
+        double countTimeCC = 0;
+        double count = 0;
     for (size_t i = 0; i < 1; i++)
     {
         memset(&clientAddress, 0, sizeof(clientAddress));
-        clientAddressLen = sizeof(clientAddress); // TODO CHECKE
+        int clientAddressLen = sizeof(clientAddress); // TODO CHECKE
         int clientSocket = accept(serverSocket, (struct sockaddr *)&clientAddress, &clientAddressLen);
+        gettimeofday(&starting_time, NULL); // start counting
+
         if (clientSocket == -1)
         {
             printf("listen failed with error code : %d \n", errno);
@@ -161,15 +110,11 @@ int main()
         char buffer[BUFFER_SIZE];
         memset(buffer, 0, BUFFER_SIZE);
         int bytesReceived;
-        sendcount = 0;
         i = 0;
-        for (size_t i = 0; i < 10; i++)
+        for (size_t i = 0; i < 8; i++)
         {
             recv(clientSocket, buffer, BUFFER_SIZE, 0);
-            sendcount++;
         }
-
-        printf("sendcount: %d\n", sendcount);
 
         if (bytesReceived == -1)
         {
@@ -179,12 +124,7 @@ int main()
             close(clientSocket);
             return -1;
         }
-
-        // Reply to client
-        char *message = "I didn't believe you would make it\n";
-        int messageLen = strlen(message) + 1;
-
-        int bytesSent = send(clientSocket, message, messageLen, 0);
+        int bytesSent = send(clientSocket, authentication, sizeof(authentication), 0);
         if (bytesSent == -1)
         {
             printf("send() failed with error code : %d\n", errno);
@@ -196,9 +136,9 @@ int main()
         {
             printf("peer has closed the TCP connection prior to send().\n");
         }
-        else if (bytesSent < messageLen)
+        else if (bytesSent < sizeof(authentication))
         {
-            printf("sent only %d bytes from the required %d.\n", messageLen, bytesSent);
+            printf("sent authentication\n");
         }
         else
         {
@@ -207,12 +147,10 @@ int main()
         close(clientSocket);
     }
     gettimeofday(&ending_time, NULL); // stop counting
-    current_time = getAmountOfTime(starting_time, ending_time);
+    double current_time = getAmountOfTime(starting_time, ending_time);
     countTimeCC += current_time;
     printf("total time = %f\n", countTimeCC);
 
     count++;
-
-    close(serverSocket);
     return 0;
 }
