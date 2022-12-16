@@ -10,14 +10,16 @@
 #include <sys/time.h>
 
 #define SERVER_PORT 2020
-#define BUFFER_SIZE 8192
+#define MSG_SIZE 8192
+#define BUFFER_SIZE 1024
+#define NAME_FILE "test.txt"
 
 int senderToServer(int ClentSocket, FILE *pfile);
 
 int main()
 {
     FILE *pfile;
-    char *filename = "test.txt";
+    char *filename = NAME_FILE;
 
     int ClentSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
@@ -31,7 +33,7 @@ int main()
     int connectResult = connect(ClentSocket, (struct sockaddr *)&address_server, sizeof(address_server));
     if (connectResult == -1)
     {
-        printf("connect() failed with error code : %d", errno);
+        printf("connect() failed : %d", errno);
         close(ClentSocket);
         return -1;
     }
@@ -43,85 +45,85 @@ int main()
     {
         printf("ERROR! file opening has failed!\n");
     }
-
     int senderToServerOutpot = senderToServer(ClentSocket, pfile);
     if (senderToServerOutpot == -1)
     {
-
         printf("error! senderToServer \n");
     }
 
-    close(ClentSocket);
+    printf("\n------------------------- SET TO CC -------------------------\n\n");
 
-    printf("------------------------- SET TO CC -------------------------\n");
     socklen_t cclen;
-    char *CC = "reno";
+    char CC[256];
+    strcpy(CC, "reno");
     cclen = strlen(CC);
-    ClentSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
     int setsockoptOutput = setsockopt(ClentSocket, IPPROTO_TCP, TCP_CONGESTION, CC, cclen);
+
     if (setsockoptOutput != 0)
     {
-        perror("ERROR! socket setting failed!\n");
+        perror("error! setsockopt() failed!\n");
         return -1;
     }
+    printf("set sockopt to CC is successfully\n");
 
-    int connectOutput = connect(ClentSocket, (struct sockaddr *)&address_server, sizeof(address_server));
-    if (connectOutput == -1)
-    {
-        perror("ERROR! connection has failed!\n");
-    }
-    else
-    {
-        printf("You have successfully connected to the server\n");
-    }
+    cclen = sizeof(CC);
 
     senderToServerOutpot = senderToServer(ClentSocket, pfile);
     if (senderToServerOutpot == -1)
     {
-
-        printf("error! senderToServer \n");
+        printf("error! senderToServer() \n");
+        return -1;
     }
+
+    fclose(pfile);
+    // close(ClentSocket);
 
     return 0;
 }
 
 int senderToServer(int ClentSocket, FILE *pfile)
 {
-
-    char msg[BUFFER_SIZE];
+    char msg[MSG_SIZE];
+    memset(&msg, 0, sizeof(msg));
     int count = 0;
+
     for (size_t i = 0; i < 8; i++)
     {
-        fread(msg, 1, sizeof(msg), pfile);
+        int freadOutput = fread(msg, 1, sizeof(msg), pfile);
+        if (freadOutput < 0)
+        {
+            perror("error! fread() failed!\n");
+            exit(1);
+        }
+
         int bytesSent = send(ClentSocket, msg, sizeof(msg), 0);
         if (bytesSent == -1)
         {
-            perror("ERROR! Sending has failed!\n");
+            perror("error! send() failed!\n");
             exit(1);
         }
-        else if (bytesSent == 0)
-        {
-            printf("peer has closed the TCP connection prior to send().\n");
-            return -1;
-        }
         else
+        {
             count++;
+        }
     }
 
-    printf("count send: %d\n", count);
+    printf("The file was sent in %d messages \n", count);
+
     if (ferror(pfile))
     {
-        perror("ERROR! file opening has failed!\n");
+        perror("ereor! file failed!\n");
     }
-    fclose(pfile);
 
     // Receive data from server
     char bufferReply[BUFFER_SIZE] = {'\0'};
     char authentication[] = "0011010001110100\0";
+
     int bytesReceived = recv(ClentSocket, bufferReply, BUFFER_SIZE, 0);
     if (bytesReceived == -1)
     {
-        printf("recv() failed with error code : %d \n", errno);
+        printf("recv() failed : %d \n", errno);
         return -1;
     }
     else if (bytesReceived == 0)
@@ -129,9 +131,13 @@ int senderToServer(int ClentSocket, FILE *pfile)
         printf("peer has closed the TCP connection prior to recv().\n");
         return -1;
     }
-    if (0==strcmp(bufferReply, authentication))
+    if (0 == strcmp(bufferReply, authentication))
     {
-        printf("Authentication succeeded \n");
+        printf("Authentication succeeded!! %s\n", authentication);
+    }
+    else
+    {
+        printf("Authentication failed!!\n");
     }
 
     return 0;
