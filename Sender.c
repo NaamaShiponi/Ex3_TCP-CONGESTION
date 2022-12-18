@@ -14,12 +14,12 @@
 #define BUFFER_SIZE 1024
 #define NAME_FILE "test.txt"
 
-int senderToServer(int ClentSocket, FILE *pfile);
+int AskTheUser(int ClentSocket);
+int senderToServer(int ClentSocket, FILE *pfile, int halfSizeFile);
+int sendToUserAnser(char answer[], int ClentSocket);
 
 int main()
 {
-    FILE *pfile;
-    char *filename = NAME_FILE;
 
     int ClentSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
@@ -40,55 +40,87 @@ int main()
 
     printf("connected to server\n");
 
-    pfile = fopen(filename, "r");
-    if (!pfile)
-    {
-        printf("ERROR! file opening has failed!\n");
-    }
-    int senderToServerOutpot = senderToServer(ClentSocket, pfile);
-    if (senderToServerOutpot == -1)
-    {
-        printf("error! senderToServer \n");
-    }
-
-    printf("\n------------------------- SET TO CC -------------------------\n\n");
-
-    socklen_t cclen;
+    int exit = 1;
     char CC[256];
-    strcpy(CC, "reno");
-    cclen = strlen(CC);
-
-    int setsockoptOutput = setsockopt(ClentSocket, IPPROTO_TCP, TCP_CONGESTION, CC, cclen);
-
-    if (setsockoptOutput != 0)
+    socklen_t cclen;
+    do
     {
-        perror("error! setsockopt() failed!\n");
-        return -1;
-    }
-    printf("set sockopt to CC is successfully\n");
+        FILE *pfile;
+        char *filename = NAME_FILE;
+        pfile = fopen(filename, "r");
+        if (!pfile)
+        {
+            printf("ERROR! file opening has failed!\n");
+        }
+        fseek(pfile, 0L, SEEK_END);
+        int firstHalfFile = MSG_SIZE * ((ftell(pfile) / MSG_SIZE / 2));
+        int secondHalfFile = ftell(pfile) - firstHalfFile;
+        fseek(pfile, 0L, SEEK_SET);
 
-    cclen = sizeof(CC);
+        printf("\n------------------------- SET TO CUBIC -------------------------\n");
 
-    senderToServerOutpot = senderToServer(ClentSocket, pfile);
-    if (senderToServerOutpot == -1)
-    {
-        printf("error! senderToServer() \n");
-        return -1;
-    }
+        strcpy(CC, "cubic");
+        cclen = strlen(CC);
 
-    fclose(pfile);
-    // close(ClentSocket);
+        if (setsockopt(ClentSocket, IPPROTO_TCP, TCP_CONGESTION, CC, cclen) != 0)
+        {
+            perror("ERROR! socket setting failed!");
+            return -1;
+        }
+        int senderToServerOutpot = senderToServer(ClentSocket, pfile, firstHalfFile);
 
-    return 0;
+        if (senderToServerOutpot == -1)
+        {
+            printf("error! senderToServer \n");
+        }
+
+        printf("\n------------------------- SET TO RENO -------------------------\n");
+
+        memset(&CC, 0, sizeof(CC));
+        strcpy(CC, "reno");
+        cclen = strlen(CC);
+
+        int setsockoptOutput = setsockopt(ClentSocket, IPPROTO_TCP, TCP_CONGESTION, CC, cclen);
+
+        if (setsockoptOutput != 0)
+        {
+            perror("error! setsockopt() failed!\n");
+            return -1;
+        }
+        printf("set sockopt to reno is successfully\n");
+
+        senderToServerOutpot = senderToServer(ClentSocket, pfile, secondHalfFile);
+
+        if (senderToServerOutpot == -1)
+        {
+            printf("error! senderToServer() \n");
+            return -1;
+        }
+        fclose(pfile);
+        exit = AskTheUser(ClentSocket);
+
+    } while (exit > 0);
+
+    close(ClentSocket);
 }
 
-int senderToServer(int ClentSocket, FILE *pfile)
+int senderToServer(int ClentSocket, FILE *pfile, int halfSizeFile)
 {
+    int countHalfSizeFile = 0;
+
     char msg[MSG_SIZE];
     memset(&msg, 0, sizeof(msg));
     int count = 0;
 
-    for (size_t i = 0; i < 8; i++)
+    sprintf(msg, "%d", halfSizeFile);
+    int bytesSent = send(ClentSocket, msg, sizeof(msg), 0);
+    if (bytesSent == -1)
+    {
+        perror("error! send() failed!\n");
+        exit(1);
+    }
+
+    while (countHalfSizeFile < halfSizeFile)
     {
         int freadOutput = fread(msg, 1, sizeof(msg), pfile);
         if (freadOutput < 0)
@@ -97,16 +129,14 @@ int senderToServer(int ClentSocket, FILE *pfile)
             exit(1);
         }
 
-        int bytesSent = send(ClentSocket, msg, sizeof(msg), 0);
+        bytesSent = send(ClentSocket, msg, sizeof(msg), 0);
         if (bytesSent == -1)
         {
             perror("error! send() failed!\n");
             exit(1);
         }
-        else
-        {
-            count++;
-        }
+        countHalfSizeFile += freadOutput;
+        count++;
     }
 
     printf("The file was sent in %d messages \n", count);
@@ -133,7 +163,7 @@ int senderToServer(int ClentSocket, FILE *pfile)
     }
     if (0 == strcmp(bufferReply, authentication))
     {
-        printf("Authentication succeeded!! %s\n", authentication);
+        printf("Authentication succeeded!! %s\n\n", authentication);
     }
     else
     {
@@ -141,4 +171,39 @@ int senderToServer(int ClentSocket, FILE *pfile)
     }
 
     return 0;
+}
+
+int AskTheUser(int ClentSocket)
+{
+
+    char answer[5];
+    while (1)
+    {
+        printf("Send the file again? yes/no\n");
+        scanf("%s", answer);
+        if (0 == strcmp(answer, "yes"))
+        {
+            sendToUserAnser(answer, ClentSocket);
+            printf("\n");
+
+            return 1;
+        }
+        else if (0 == strcmp(answer, "no"))
+        {
+            sendToUserAnser(answer, ClentSocket);
+            return 0;
+        }
+    }
+}
+
+int sendToUserAnser(char answer[], int ClentSocket)
+{
+    int bytesSent = send(ClentSocket, answer, 5, 0);
+    if (bytesSent == -1)
+    {
+        perror("error! send() NO failed!\n");
+        close(ClentSocket);
+        return -1;
+    }
+    return 1;
 }

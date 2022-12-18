@@ -15,7 +15,9 @@
 #define SERVER_PORT 2020
 #define BUFFER_SIZE 8192
 
-int resvAndsend(struct sockaddr_in clientAddress, int serverSocket, int clientSocket);
+int resvAndsend(struct sockaddr_in clientAddress, int serverSocket, int clientSocket, double arrTime[], int *arrTimelen);
+int connectionStatus(int clientSocket, int serverSocket);
+void printTime(double renoTime[], int renoTimelen, double cubicTime[], int cubicTimelen);
 
 typedef struct timeval time;
 
@@ -29,6 +31,10 @@ double getAmountOfTime(time starting_time, time ending_time)
 
 int main()
 {
+    double *arrTimeCubic = (double *)malloc(sizeof(double) * 100);
+    double *arrTimeReno = (double *)malloc(sizeof(double) * 100);
+    int arrTimeCubiclen = 1;
+    int arrTimeRenolen = 1;
 
     struct sockaddr_in serverAddress;
     memset(&serverAddress, 0, sizeof(serverAddress));
@@ -70,62 +76,86 @@ int main()
         return -1;
     }
     printf("get a new maseage from client\n");
-
-    int resvAndsendOutput = resvAndsend(clientAddress, serverSocket, clientSocket);
-    if (resvAndsendOutput == -1)
-    {
-        printf("resvAndsend() failed \n");
-        close(serverSocket);
-        return -1;
-    }
-
-    printf("\n------------------------- SET TO CC ------------------------- \n\n");
-
-    socklen_t cclen;
+    int exit = 1;
     char CC[256];
-    strcpy(CC, "reno");
-    cclen = strlen(CC);
-
-    int setsockoptOutput = setsockopt(serverSocket, IPPROTO_TCP, TCP_CONGESTION, CC, cclen);
-    if (setsockoptOutput != 0)
+    socklen_t cclen;
+    do
     {
-        perror("ERROR! socket setting failed!\n");
-        return -1;
-    }
-    if (getsockopt(serverSocket, IPPROTO_TCP, TCP_CONGESTION, CC, &cclen) != 0)
-    {
-        perror("ERROR! socket getting failed!");
-        return -1;
-    }
-    printf("set sockopt to CC is successfully\n");
+        printf("\n------------------------- SET TO CUBIC ------------------------- \n");
 
-    resvAndsendOutput = resvAndsend(clientAddress, serverSocket, clientSocket);
-    if (resvAndsendOutput == -1)
-    {
-        printf("error resvAndsend()\n");
-        close(serverSocket);
-        return -1;
-    }
+        strcpy(CC, "cubic");
+        cclen = strlen(CC);
 
+        if (setsockopt(serverSocket, IPPROTO_TCP, TCP_CONGESTION, CC, cclen) != 0)
+        {
+            perror("error! set sockopt to cubic failed!");
+            return -1;
+        }
+        int resvAndsendOutput = resvAndsend(clientAddress, serverSocket, clientSocket, arrTimeCubic, &arrTimeCubiclen);
+        if (resvAndsendOutput == -1)
+        {
+            printf("resvAndsend() failed \n");
+            close(serverSocket);
+            return -1;
+        }
+
+        printf("\n------------------------- SET TO RENO ------------------------- \n");
+        memset(&CC, 0, sizeof(CC));
+        strcpy(CC, "reno");
+        cclen = strlen(CC);
+
+        int setsockoptOutput = setsockopt(serverSocket, IPPROTO_TCP, TCP_CONGESTION, CC, cclen);
+        if (setsockoptOutput != 0)
+        {
+            perror("ERROR! socket setting failed!\n");
+            return -1;
+        }
+
+        if (getsockopt(serverSocket, IPPROTO_TCP, TCP_CONGESTION, CC, &cclen) != 0)
+        {
+            perror("ERROR! socket getting failed!");
+            return -1;
+        }
+        printf("set sockopt to reno is successfully\n");
+
+        resvAndsendOutput = resvAndsend(clientAddress, serverSocket, clientSocket, arrTimeReno, &arrTimeRenolen);
+        if (resvAndsendOutput == -1)
+        {
+            printf("error resvAndsend()\n");
+            close(serverSocket);
+            return -1;
+        }
+
+        exit = connectionStatus(clientSocket, serverSocket);
+
+    } while (exit > 0);
+    printTime(arrTimeReno, arrTimeRenolen, arrTimeCubic, arrTimeCubiclen);
+    free(arrTimeCubic);
+    free(arrTimeReno);
+    close(clientSocket);
     // close(serverSocket);
     return 0;
 }
 
-int resvAndsend(struct sockaddr_in clientAddress, int serverSocket, int clientSocket)
+int resvAndsend(struct sockaddr_in clientAddress, int serverSocket, int clientSocket, double arrTime[], int *arrTimelen)
 {
     char authentication[] = "0011010001110100";
     time starting_time, ending_time;
-    double countTimeTCP = 0;
-    double countTimeCC = 0;
-    int count = 0;
+    // int count = 0;
+    int isFirst=1;
+    int countHalfSizeFile = 0;
+    int halfSizeFile;
+    char *ptr;
 
-    gettimeofday(&starting_time, NULL);
     char buffer[BUFFER_SIZE];
     memset(buffer, 0, BUFFER_SIZE);
     int bytesReceived;
-    for (size_t i = 0; i < 8; i++)
+    memset(&starting_time, 0, sizeof(starting_time));
+    memset(&ending_time, 0, sizeof(ending_time));
+    do
     {
         bytesReceived = recv(clientSocket, buffer, BUFFER_SIZE, 0);
+
         if (bytesReceived == -1)
         {
             printf("recv() failed: %d \n", errno);
@@ -133,10 +163,23 @@ int resvAndsend(struct sockaddr_in clientAddress, int serverSocket, int clientSo
             close(clientSocket);
             return -1;
         }
-        count++;
+        if(isFirst){
+            isFirst=0;
+            bytesReceived=0;
+            halfSizeFile=strtol(buffer, &ptr,10);
+            gettimeofday(&starting_time, NULL);
 
-    }
-    printf("%d packages were received from the customer\n",count);
+        }else{
+            countHalfSizeFile+=bytesReceived;
+            // count++;
+        }
+        
+        
+    }while (countHalfSizeFile < halfSizeFile);
+    
+    gettimeofday(&ending_time, NULL); // stop counting
+
+    // printf("%d packages were received from the customer\n", count);
 
     int bytesSent = send(clientSocket, authentication, sizeof(authentication), 0);
     if (bytesSent == -1)
@@ -159,10 +202,71 @@ int resvAndsend(struct sockaddr_in clientAddress, int serverSocket, int clientSo
         printf("message was successfully sent.\n");
     }
 
-    gettimeofday(&ending_time, NULL); // stop counting
     double current_time = getAmountOfTime(starting_time, ending_time);
-    countTimeCC += current_time;
-    printf("total time = %f\n", countTimeCC);
-
+    int newSize=((sizeof(double)*(*arrTimelen))*2);
+    // arrTime = (double *)realloc(arrTime, newSize);
+    // if(arrTime==NULL) printf("error\n"); 
+    arrTime[*arrTimelen] = current_time;
+    *arrTimelen = *arrTimelen + 1;
     return 0;
+}
+
+int connectionStatus(int clientSocket, int serverSocket)
+{
+
+    char buffer[BUFFER_SIZE];
+    memset(buffer, 0, BUFFER_SIZE);
+    int bytesReceived = recv(clientSocket, buffer, BUFFER_SIZE, 0);
+    if (bytesReceived == -1)
+    {
+        printf("recv() failed: %d \n", errno);
+        close(clientSocket);
+        close(serverSocket);
+        return -1;
+    }
+    if (0 == strcmp(buffer, "no"))
+    {
+        printf("\nclosing the connection\n");
+        return 0;
+    }
+    return 1;
+}
+
+void printTime(double renoTime[], int renoTimelen, double cubicTime[], int cubicTimelen)
+{
+
+    printf("\n---------------- Times ----------------\n");
+    double average = 0;
+    printf("Times of the first half file (cubic TCP)\n");
+    for (int i = 1; i < cubicTimelen; i++)
+    {
+
+        printf("message  %d : total time = %f\n", i, cubicTime[i]);
+        average += cubicTime[i];
+    }
+    if (cubicTimelen == 1)
+    {
+        average;
+    }
+    else{
+        average = average / (cubicTimelen - 1);
+    }
+    printf("average times (cubic TCP): %f\n", average);
+
+    average = 0;
+    printf("\nTimes of the second half file (reno TCP)\n");
+    for (int i = 1; i < renoTimelen; i++)
+    {
+        printf("message  %d: total time= %f\n", i, renoTime[i]);
+        average += renoTime[i];
+    }
+     if (renoTimelen == 1)
+    {
+        average;
+    }
+    else{
+    average = average / (renoTimelen - 1);
+    }
+
+    printf("average times(reno TCP): %f\n", average);
 }
