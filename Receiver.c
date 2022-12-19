@@ -1,22 +1,23 @@
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <strings.h>
-#include <errno.h>
 #include <string.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <netinet/in.h>
+#include <strings.h>
+#include <errno.h>
+#include <sys/types.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
 #include <signal.h>
 
-#define SERVER_PORT 2020
+#define PORT 2020
 #define BUFFER_SIZE 8192
+#define HALF_FILE_SIZE 550571
 
-int resvAndsend(struct sockaddr_in clientAddress, int serverSocket, int clientSocket, double arrTime[], int *arrTimelen);
-int connectionStatus(int clientSocket, int serverSocket);
+void resvAndsend(char *msg, int new_socket,double arrTime[], int *arrTimelen);
+int questionsContinued(int new_socket);
 void printTime(double renoTime[], int renoTimelen, double cubicTime[], int cubicTimelen);
 
 typedef struct timeval time;
@@ -29,208 +30,213 @@ double getAmountOfTime(time starting_time, time ending_time)
     return total_time;
 }
 
+
 int main()
 {
     double *arrTimeCubic = (double *)malloc(sizeof(double) * 100);
     double *arrTimeReno = (double *)malloc(sizeof(double) * 100);
-    int arrTimeCubiclen = 1;
-    int arrTimeRenolen = 1;
-
+    int arrTimeCubiclen = 1,arrTimeRenolen = 1;
+    
+    int switchToWhile = 1, server_socket, new_socket;
     struct sockaddr_in serverAddress;
+    char CC[256];
+    socklen_t CClen;
     memset(&serverAddress, 0, sizeof(serverAddress));
+    int serverAddressLen = sizeof(serverAddress);
+    char buffer[BUFFER_SIZE] = {0};
+    char *authentication = "0011010001110100";
 
-    serverAddress.sin_family = AF_INET;
-    serverAddress.sin_port = htons(SERVER_PORT);
-    serverAddress.sin_addr.s_addr = INADDR_ANY;
+    // Creating socket file descriptor
+    if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        perror("socket failed");
+        exit(EXIT_FAILURE);
+    }
 
-    int serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-
+    // Forcefully attaching socket to the port 8080
     int yes = 1;
-    if (setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) == -1)
+    if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &yes, sizeof(yes)))
     {
         perror("setsockopt");
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
-    bind(serverSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_addr.s_addr = INADDR_ANY;
+    serverAddress.sin_port = htons(PORT);
 
-    int listenResult = listen(serverSocket, 1);
-    if (listenResult == -1)
+    // Forcefully attaching socket to the port 8080
+    if (bind(server_socket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0)
     {
-        printf("listen failed: %d\n", errno);
-        close(serverSocket);
-        return -1;
+        perror("bind failed");
+        exit(EXIT_FAILURE);
     }
-
+    if (listen(server_socket, 1) < 0)
+    {
+        perror("listen");
+        exit(EXIT_FAILURE);
+    }
     printf("Receiver listen, ip: 0.0.0.0 port: 2020 \n");
 
-    struct sockaddr_in clientAddress;
-    memset(&clientAddress, 0, sizeof(clientAddress));
-    socklen_t clientAddressLen = sizeof(clientAddress);
-
-    int clientSocket = accept(serverSocket, (struct sockaddr *)&clientAddress, &clientAddressLen);
-    if (clientSocket == -1)
+    if ((new_socket = accept(server_socket, (struct sockaddr *)&serverAddress, (socklen_t *)&serverAddressLen)) < 0)
     {
-        printf("accept() failed: %d \n", errno);
-        close(serverSocket);
-        return -1;
+        perror("accept");
+        exit(EXIT_FAILURE);
     }
-    printf("get a new maseage from client\n");
-    int exit = 1;
-    char CC[256];
-    socklen_t cclen;
-    do
+
+    while (switchToWhile)
     {
-        printf("\n------------------------- SET TO CUBIC ------------------------- \n");
+
+        printf("\n\nnew loop \n" );
+        printf("------------------------- SET TO CUBIC -------------------------\n");
 
         strcpy(CC, "cubic");
-        cclen = strlen(CC);
+        CClen = strlen(CC);
 
-        if (setsockopt(serverSocket, IPPROTO_TCP, TCP_CONGESTION, CC, cclen) != 0)
+        if (setsockopt(server_socket, IPPROTO_TCP, TCP_CONGESTION, CC, CClen) != 0)
         {
             perror("error! set sockopt to cubic failed!");
             return -1;
         }
-        int resvAndsendOutput = resvAndsend(clientAddress, serverSocket, clientSocket, arrTimeCubic, &arrTimeCubiclen);
-        if (resvAndsendOutput == -1)
-        {
-            printf("resvAndsend() failed \n");
-            close(serverSocket);
-            return -1;
-        }
+        resvAndsend(authentication, new_socket,arrTimeCubic, &arrTimeCubiclen);
+
+
+
 
         printf("\n------------------------- SET TO RENO ------------------------- \n");
         memset(&CC, 0, sizeof(CC));
         strcpy(CC, "reno");
-        cclen = strlen(CC);
-
-        int setsockoptOutput = setsockopt(serverSocket, IPPROTO_TCP, TCP_CONGESTION, CC, cclen);
-        if (setsockoptOutput != 0)
+        CClen = strlen(CC);
+        if (setsockopt(server_socket, IPPROTO_TCP, TCP_CONGESTION, CC, CClen) != 0)
         {
             perror("ERROR! socket setting failed!\n");
             return -1;
         }
 
-        if (getsockopt(serverSocket, IPPROTO_TCP, TCP_CONGESTION, CC, &cclen) != 0)
-        {
-            perror("ERROR! socket getting failed!");
-            return -1;
-        }
-        printf("set sockopt to reno is successfully\n");
+        resvAndsend(authentication, new_socket,arrTimeReno, &arrTimeRenolen);
 
-        resvAndsendOutput = resvAndsend(clientAddress, serverSocket, clientSocket, arrTimeReno, &arrTimeRenolen);
-        if (resvAndsendOutput == -1)
-        {
-            printf("error resvAndsend()\n");
-            close(serverSocket);
-            return -1;
-        }
+ 
+        switchToWhile= questionsContinued(new_socket);
+        
 
-        exit = connectionStatus(clientSocket, serverSocket);
-
-    } while (exit > 0);
+    } 
     printTime(arrTimeReno, arrTimeRenolen, arrTimeCubic, arrTimeCubiclen);
     free(arrTimeCubic);
     free(arrTimeReno);
-    close(clientSocket);
-    // close(serverSocket);
+    // closing the connected socket
+    close(new_socket);
+    // closing the listening socket
+    shutdown(server_socket, SHUT_RDWR);
     return 0;
 }
 
-int resvAndsend(struct sockaddr_in clientAddress, int serverSocket, int clientSocket, double arrTime[], int *arrTimelen)
-{
-    char authentication[] = "0011010001110100";
-    time starting_time, ending_time;
-    // int count = 0;
-    int isFirst=1;
-    int countHalfSizeFile = 0;
-    int halfSizeFile;
-    char *ptr;
 
-    char buffer[BUFFER_SIZE];
-    memset(buffer, 0, BUFFER_SIZE);
-    int bytesReceived;
+
+
+void resvAndsend(char *msg, int new_socket,double arrTime[], int *arrTimelen)
+{
+    time starting_time, ending_time;
     memset(&starting_time, 0, sizeof(starting_time));
     memset(&ending_time, 0, sizeof(ending_time));
-    do
+
+    int countHalfSizeFile=0;
+    int valrecv=0;
+    char buffer[BUFFER_SIZE] = {0};
+    printf("I'm waiting for the file\n");
+    gettimeofday(&starting_time, NULL);
+    // for (size_t i = 0; i < 67; i++)
+    // {
+    //     valrecv=recv(new_socket, buffer, BUFFER_SIZE, 0);
+    //     printf("valrecv %d",valrecv);
+    //     if(valrecv==-1){
+    //     printf("recv() in resvAndsend failed: %d \n", errno);
+    //     close(new_socket);
+    //     exit(1);
+    //     }
+    // }
+    double current_time = getAmountOfTime(starting_time, ending_time);
+    arrTime[*arrTimelen] = current_time;
+    *arrTimelen = *arrTimelen + 1;
+
+
+    int count=0;
+    while((valrecv=recv(new_socket, buffer, BUFFER_SIZE, 0)) > 0 )
     {
-        bytesReceived = recv(clientSocket, buffer, BUFFER_SIZE, 0);
-
-        if (bytesReceived == -1)
-        {
-            printf("recv() failed: %d \n", errno);
-            close(serverSocket);
-            close(clientSocket);
-            return -1;
+        count++;
+        countHalfSizeFile+=valrecv;
+        if(countHalfSizeFile>=HALF_FILE_SIZE){
+            break;
         }
-        if(isFirst){
-            isFirst=0;
-            bytesReceived=0;
-            halfSizeFile=strtol(buffer, &ptr,10);
-            gettimeofday(&starting_time, NULL);
-
-        }else{
-            countHalfSizeFile+=bytesReceived;
-            // count++;
-        }
-        
-        
-    }while (countHalfSizeFile < halfSizeFile);
-    
+    }
     gettimeofday(&ending_time, NULL); // stop counting
 
-    // printf("%d packages were received from the customer\n", count);
 
-    int bytesSent = send(clientSocket, authentication, sizeof(authentication), 0);
-    if (bytesSent == -1)
-    {
-        printf("send() failed: %d\n", errno);
-        close(serverSocket);
-        close(clientSocket);
-        return -1;
+    if(valrecv==-1){
+        printf("recv() in resvAndsend failed: %d \n", errno);
+        close(new_socket);
+        exit(1);
     }
-    else if (bytesSent == 0)
+   
+    
+    printf("client send file\n");
+
+    if (send(new_socket, msg, strlen(msg), 0) == -1)
     {
-        printf("peer has closed the TCP connection prior to send().\n");
+        printf("send() in resvAndsend failed: %d\n", errno);
+        close(new_socket);
+        exit(1);
     }
-    else if (bytesSent < sizeof(authentication))
+    printf("i send: %s \n", msg);
+}
+
+
+
+
+
+int questionsContinued(int new_socket){
+    printf("\nWaiting for you or no..\n");
+    int valrecv;
+    char buffer[BUFFER_SIZE] = {0};
+    if (valrecv = recv(new_socket, buffer, BUFFER_SIZE, 0) == -1)
     {
-        printf("sent authentication\n");
+        printf("recv() in questionsContinued failed: %d \n", errno);
+        close(new_socket);
+        exit(1);
+    }
+    printf("buffer %s\n",buffer);
+
+    if (!strcmp(buffer, "no"))
+    {
+        printf("\nclosing the connection\n");
+        if (send(new_socket, "OK", strlen("OK"), 0) == -1)
+        {
+            printf("send() failed: %d\n", errno);
+            close(new_socket);
+            exit(1);
+        }
+        return 0;
+    }
+    if (!strcmp(buffer, "yes"))
+    {
+        printf("\nconnection\n");
+        if (send(new_socket, "OK", strlen("OK"), 0) == -1)
+        {
+            printf("send() failed: %d\n", errno);
+            close(new_socket);
+            exit(1);
+        }
+        return 1;
     }
     else
     {
-        printf("message was successfully sent.\n");
+        printf("\nyes????no???  %s\n ", buffer);
+        close(new_socket);
+        exit(1);
     }
 
-    double current_time = getAmountOfTime(starting_time, ending_time);
-    int newSize=((sizeof(double)*(*arrTimelen))*2);
-    // arrTime = (double *)realloc(arrTime, newSize);
-    // if(arrTime==NULL) printf("error\n"); 
-    arrTime[*arrTimelen] = current_time;
-    *arrTimelen = *arrTimelen + 1;
-    return 0;
 }
 
-int connectionStatus(int clientSocket, int serverSocket)
-{
 
-    char buffer[BUFFER_SIZE];
-    memset(buffer, 0, BUFFER_SIZE);
-    int bytesReceived = recv(clientSocket, buffer, BUFFER_SIZE, 0);
-    if (bytesReceived == -1)
-    {
-        printf("recv() failed: %d \n", errno);
-        close(clientSocket);
-        close(serverSocket);
-        return -1;
-    }
-    if (0 == strcmp(buffer, "no"))
-    {
-        printf("\nclosing the connection\n");
-        return 0;
-    }
-    return 1;
-}
 
 void printTime(double renoTime[], int renoTimelen, double cubicTime[], int cubicTimelen)
 {

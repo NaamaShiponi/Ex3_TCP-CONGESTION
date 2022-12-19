@@ -8,202 +8,169 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/time.h>
+#include <arpa/inet.h>
 
-#define SERVER_PORT 2020
-#define MSG_SIZE 8192
-#define BUFFER_SIZE 1024
+#define PORT 2020
+#define MSG_SIZE 550571
 #define NAME_FILE "test.txt"
+#define BUFFER_SIZE 8192
 
-int AskTheUser(int ClentSocket);
-int senderToServer(int ClentSocket, FILE *pfile, int halfSizeFile);
-int sendToUserAnser(char answer[], int ClentSocket);
+int senderToServer(char *msg, int sock);
+int yesNoQuestions(int sock);
+void sendToUserAnser(char *answer, int sock);
 
 int main()
 {
+    int sock = 0, switchToWhile=1,clientConnect,freadOutput;
+    char CC[256];
+    socklen_t CClen;
+    struct sockaddr_in serverAddress;
+    char *hello[MSG_SIZE];
+    //= "Hello from client";
+    char *msg[MSG_SIZE]; 
+    //= "i send msg 2";
+    char firstHalf[MSG_SIZE]={0};
+    char secondHalf[MSG_SIZE]={0};
+    char buffer[BUFFER_SIZE] = {0};
+    FILE *pfile;
+    char *filename = NAME_FILE;
+    pfile = fopen(filename, "r");
 
-    int ClentSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-
-    struct sockaddr_in address_server;
-    memset(&address_server, 0, sizeof(address_server));
-
-    address_server.sin_family = AF_INET;
-    address_server.sin_port = htons(SERVER_PORT);
-    address_server.sin_addr.s_addr = INADDR_ANY;
-
-    int connectResult = connect(ClentSocket, (struct sockaddr *)&address_server, sizeof(address_server));
-    if (connectResult == -1)
+    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
-        printf("connect() failed : %d", errno);
-        close(ClentSocket);
+        printf("\n Socket creation error \n");
         return -1;
     }
 
-    printf("connected to server\n");
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_port = htons(PORT);
+    serverAddress.sin_addr.s_addr = INADDR_ANY;
 
-    int exit = 1;
-    char CC[256];
-    socklen_t cclen;
-    do
+    // Convert IPv4 and IPv6 addresses from text to binary
+    // form
+    if (inet_pton(AF_INET, "127.0.0.1", &serverAddress.sin_addr) <= 0)
     {
-        FILE *pfile;
-        char *filename = NAME_FILE;
-        pfile = fopen(filename, "r");
-        if (!pfile)
-        {
-            printf("ERROR! file opening has failed!\n");
-        }
-        fseek(pfile, 0L, SEEK_END);
-        int firstHalfFile = MSG_SIZE * ((ftell(pfile) / MSG_SIZE / 2));
-        int secondHalfFile = ftell(pfile) - firstHalfFile;
-        fseek(pfile, 0L, SEEK_SET);
+        printf("\nInvalid address/ Address not supported \n");
+        return -1;
+    }
 
-        printf("\n------------------------- SET TO CUBIC -------------------------\n");
+    if ((clientConnect = connect(sock, (struct sockaddr *)&serverAddress, sizeof(serverAddress))) < 0)
+    {
+        printf("\nConnection Failed \n");
+        return -1;
+    }
+
+
+    freadOutput = fread(firstHalf, 1, sizeof(firstHalf), pfile);
+    if (freadOutput < 0)
+    {
+        perror("error! fread() failed!\n");
+        exit(1);
+    }
+    freadOutput = fread(secondHalf, 1, sizeof(secondHalf), pfile);
+    if (freadOutput < 0)
+    {
+        perror("error! fread() failed!\n");
+        exit(1);
+    }
+
+    while (switchToWhile)
+    {
+        printf("\n\nnew loop \n");
+
+        printf("------------------------- SET TO CUBIC -------------------------\n");
 
         strcpy(CC, "cubic");
-        cclen = strlen(CC);
+        CClen = strlen(CC);
 
-        if (setsockopt(ClentSocket, IPPROTO_TCP, TCP_CONGESTION, CC, cclen) != 0)
+        if (setsockopt(sock, IPPROTO_TCP, TCP_CONGESTION, CC, CClen) != 0)
         {
             perror("ERROR! socket setting failed!");
             return -1;
         }
-        int senderToServerOutpot = senderToServer(ClentSocket, pfile, firstHalfFile);
+        senderToServer(firstHalf, sock);
 
-        if (senderToServerOutpot == -1)
-        {
-            printf("error! senderToServer \n");
-        }
-
-        printf("\n------------------------- SET TO RENO -------------------------\n");
-
+        printf("\n------------------------- SET TO RENO ------------------------- \n");
         memset(&CC, 0, sizeof(CC));
         strcpy(CC, "reno");
-        cclen = strlen(CC);
-
-        int setsockoptOutput = setsockopt(ClentSocket, IPPROTO_TCP, TCP_CONGESTION, CC, cclen);
-
-        if (setsockoptOutput != 0)
+        CClen = strlen(CC);
+        if (setsockopt(sock, IPPROTO_TCP, TCP_CONGESTION, CC, CClen) != 0)
         {
-            perror("error! setsockopt() failed!\n");
+            perror("ERROR! socket setting failed!\n");
             return -1;
         }
-        printf("set sockopt to reno is successfully\n");
 
-        senderToServerOutpot = senderToServer(ClentSocket, pfile, secondHalfFile);
+        senderToServer(secondHalf, sock);
 
-        if (senderToServerOutpot == -1)
-        {
-            printf("error! senderToServer() \n");
-            return -1;
-        }
-        fclose(pfile);
-        exit = AskTheUser(ClentSocket);
+        switchToWhile=yesNoQuestions(sock);
+    }
 
-    } while (exit > 0);
-
-    close(ClentSocket);
+    // closing the file
+    fclose(pfile);
+    // closing the connected socket
+    close(clientConnect);
+    return 0;
 }
 
-int senderToServer(int ClentSocket, FILE *pfile, int halfSizeFile)
+
+
+
+
+
+
+int senderToServer(char *msg, int sock)
 {
-    int countHalfSizeFile = 0;
-
-    char msg[MSG_SIZE];
-    memset(&msg, 0, sizeof(msg));
-    int count = 0;
-
-    sprintf(msg, "%d", halfSizeFile);
-    int bytesSent = send(ClentSocket, msg, sizeof(msg), 0);
+    int valrecv,bytesSent;
+    char buffer[BUFFER_SIZE] = {0};
+    bytesSent = send(sock, msg, strlen(msg), 0);
     if (bytesSent == -1)
     {
         perror("error! send() failed!\n");
         exit(1);
     }
+    printf("i send the file\n");
 
-    while (countHalfSizeFile < halfSizeFile)
-    {
-        int freadOutput = fread(msg, 1, sizeof(msg), pfile);
-        if (freadOutput < 0)
-        {
-            perror("error! fread() failed!\n");
-            exit(1);
-        }
-
-        bytesSent = send(ClentSocket, msg, sizeof(msg), 0);
-        if (bytesSent == -1)
-        {
-            perror("error! send() failed!\n");
-            exit(1);
-        }
-        countHalfSizeFile += freadOutput;
-        count++;
-    }
-
-    printf("The file was sent in %d messages \n", count);
-
-    if (ferror(pfile))
-    {
-        perror("ereor! file failed!\n");
-    }
-
-    // Receive data from server
-    char bufferReply[BUFFER_SIZE] = {'\0'};
-    char authentication[] = "0011010001110100\0";
-
-    int bytesReceived = recv(ClentSocket, bufferReply, BUFFER_SIZE, 0);
-    if (bytesReceived == -1)
-    {
-        printf("recv() failed : %d \n", errno);
-        return -1;
-    }
-    else if (bytesReceived == 0)
-    {
-        printf("peer has closed the TCP connection prior to recv().\n");
-        return -1;
-    }
-    if (0 == strcmp(bufferReply, authentication))
-    {
-        printf("Authentication succeeded!! %s\n\n", authentication);
-    }
-    else
-    {
-        printf("Authentication failed!!\n");
-    }
-
-    return 0;
+    valrecv = recv(sock, buffer, BUFFER_SIZE, 0);
+    printf("server resv to my: %s\n", buffer);
 }
 
-int AskTheUser(int ClentSocket)
-{
 
+int yesNoQuestions(int sock){
     char answer[5];
     while (1)
     {
-        printf("Send the file again? yes/no\n");
+        printf("\n\nSend the file again? yes/no\n");
         scanf("%s", answer);
-        if (0 == strcmp(answer, "yes"))
+        if (!strcmp(answer, "yes"))
         {
-            sendToUserAnser(answer, ClentSocket);
+            sendToUserAnser(answer, sock);
             printf("\n");
 
             return 1;
         }
-        else if (0 == strcmp(answer, "no"))
+        else if (!strcmp(answer, "no"))
         {
-            sendToUserAnser(answer, ClentSocket);
+            sendToUserAnser(answer, sock);
             return 0;
         }
     }
 }
 
-int sendToUserAnser(char answer[], int ClentSocket)
+void sendToUserAnser(char *answer, int sock)
 {
-    int bytesSent = send(ClentSocket, answer, 5, 0);
+    char buffer[BUFFER_SIZE] = {0};
+    int bytesSent = send(sock, answer, 5, 0);
     if (bytesSent == -1)
     {
-        perror("error! send() NO failed!\n");
-        close(ClentSocket);
-        return -1;
+        perror("error! send() in sendToUserAnser NO failed!\n");
+        close(sock);
     }
-    return 1;
+
+    printf("sending to servet %s \n",answer);
+    if (recv(sock, buffer, BUFFER_SIZE, 0) < 0)
+    {
+        perror("error! recv() in sendToUserAnser NO failed!\n");
+        close(sock);
+    }
+
 }
