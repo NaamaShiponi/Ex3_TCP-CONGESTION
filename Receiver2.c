@@ -16,13 +16,27 @@
 #define BUFFER_SIZE 8192
 #define HALF_FILE_SIZE 550570
 
-void resvAndsend(char *msg, int new_socket);
+void resvAndsend(char *msg, int new_socket,double arrTime[], int *arrTimelen);
 int questionsContinued(int new_socket);
 void printTime(double renoTime[], int renoTimelen, double cubicTime[], int cubicTimelen);
+
+typedef struct timeval time;
+
+// calculate the amount of time it takes to get the packets.
+double getAmountOfTime(time starting_time, time ending_time)
+{
+    double total_time = ((ending_time.tv_sec * 1000000 + ending_time.tv_usec) -
+                         (starting_time.tv_sec * 1000000 + starting_time.tv_usec));
+    return total_time;
+}
 
 
 int main()
 {
+    double *arrTimeCubic = (double *)malloc(sizeof(double) * 100);
+    double *arrTimeReno = (double *)malloc(sizeof(double) * 100);
+    int arrTimeCubiclen = 1,arrTimeRenolen = 1;
+    
     int switchToWhile = 1, server_socket, new_socket;
     struct sockaddr_in serverAddress;
     char CC[256];
@@ -84,7 +98,7 @@ int main()
             perror("error! set sockopt to cubic failed!");
             return -1;
         }
-        resvAndsend(authentication, new_socket);
+        resvAndsend(authentication, new_socket,arrTimeCubic, &arrTimeCubiclen);
 
 
 
@@ -99,14 +113,16 @@ int main()
             return -1;
         }
 
-        resvAndsend(authentication, new_socket);
+        resvAndsend(authentication, new_socket,arrTimeReno, &arrTimeRenolen);
 
  
         switchToWhile= questionsContinued(new_socket);
         
 
     } 
-
+    printTime(arrTimeReno, arrTimeRenolen, arrTimeCubic, arrTimeCubiclen);
+    free(arrTimeCubic);
+    free(arrTimeReno);
     // closing the connected socket
     close(new_socket);
     // closing the listening socket
@@ -117,12 +133,17 @@ int main()
 
 
 
-void resvAndsend(char *msg, int new_socket)
+void resvAndsend(char *msg, int new_socket,double arrTime[], int *arrTimelen)
 {
+    time starting_time, ending_time;
+    memset(&starting_time, 0, sizeof(starting_time));
+    memset(&ending_time, 0, sizeof(ending_time));
+
     int countHalfSizeFile=0;
     int valrecv;
     char buffer[BUFFER_SIZE] = {0};
     printf("I'm waiting for the file\n");
+    gettimeofday(&starting_time, NULL);
     for (size_t i = 0; i < 67; i++)
     {
         valrecv=recv(new_socket, buffer, BUFFER_SIZE, 0);
@@ -132,6 +153,12 @@ void resvAndsend(char *msg, int new_socket)
         exit(1);
         }
     }
+    gettimeofday(&ending_time, NULL); // stop counting
+    double current_time = getAmountOfTime(starting_time, ending_time);
+    arrTime[*arrTimelen] = current_time;
+    *arrTimelen = *arrTimelen + 1;
+
+
     // int count=0;
     // while(valrecv=recv(new_socket, buffer, BUFFER_SIZE, 0) >0 )
     // {
@@ -142,11 +169,11 @@ void resvAndsend(char *msg, int new_socket)
     //         break;
     //     }
     // }
-    if(valrecv==-1){
-        printf("recv() in resvAndsend failed: %d \n", errno);
-        close(new_socket);
-        exit(1);
-        }
+    // if(valrecv==-1){
+    //     printf("recv() in resvAndsend failed: %d \n", errno);
+    //     close(new_socket);
+    //     exit(1);
+    // }
    
     
     printf("client send file\n");
