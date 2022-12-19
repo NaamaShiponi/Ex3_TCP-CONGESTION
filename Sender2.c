@@ -11,8 +11,8 @@
 #include <arpa/inet.h>
 
 #define PORT 2020
-#define MSG_SIZE 540672
-#define NAME_FILE "test.txt"
+#define MSG_SIZE 540670
+#define NAME_FILE "t.txt"
 #define BUFFER_SIZE 8192
 
 int senderToServer(char *msg, int sock);
@@ -21,13 +21,20 @@ void sendToUserAnser(char *answer, int sock);
 
 int main()
 {
-    int sock = 0, switchToWhile=1,clientConnect;
+    int sock = 0, switchToWhile=1,clientConnect,freadOutput;
     char CC[256];
     socklen_t CClen;
     struct sockaddr_in serverAddress;
-    char *hello = "Hello from client";
-    char *msg = "i send msg 2";
+    char *hello[MSG_SIZE];
+    //= "Hello from client";
+    char *msg[MSG_SIZE]; 
+    //= "i send msg 2";
+    char firstHalf[MSG_SIZE]={0};
+    char secondHalf[MSG_SIZE]={0};
     char buffer[BUFFER_SIZE] = {0};
+    FILE *pfile;
+    char *filename = NAME_FILE;
+    pfile = fopen(filename, "r");
 
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
@@ -52,9 +59,25 @@ int main()
         printf("\nConnection Failed \n");
         return -1;
     }
+
+
+    freadOutput = fread(firstHalf, 1, sizeof(firstHalf), pfile);
+    if (freadOutput < 0)
+    {
+        perror("error! fread() failed!\n");
+        exit(1);
+    }
+    freadOutput = fread(secondHalf, 1, sizeof(secondHalf), pfile);
+    if (freadOutput < 0)
+    {
+        perror("error! fread() failed!\n");
+        exit(1);
+    }
+
     while (switchToWhile)
     {
         printf("\n\nnew loop \n");
+
         printf("------------------------- SET TO CUBIC -------------------------\n");
 
         strcpy(CC, "cubic");
@@ -65,7 +88,7 @@ int main()
             perror("ERROR! socket setting failed!");
             return -1;
         }
-        senderToServer(hello, sock);
+        senderToServer(firstHalf, sock);
 
         printf("\n------------------------- SET TO RENO ------------------------- \n");
         memset(&CC, 0, sizeof(CC));
@@ -77,10 +100,13 @@ int main()
             return -1;
         }
 
-        senderToServer(msg, sock);
+        senderToServer(secondHalf, sock);
 
         switchToWhile=yesNoQuestions(sock);
     }
+
+    // closing the file
+    fclose(pfile);
     // closing the connected socket
     close(clientConnect);
     return 0;
@@ -96,14 +122,13 @@ int senderToServer(char *msg, int sock)
 {
     int valrecv,bytesSent;
     char buffer[BUFFER_SIZE] = {0};
-    printf("i am the claint\n");
     bytesSent = send(sock, msg, strlen(msg), 0);
     if (bytesSent == -1)
     {
         perror("error! send() failed!\n");
         exit(1);
     }
-    printf("i send %s\n", msg);
+    printf("i send the file\n");
 
     valrecv = recv(sock, buffer, BUFFER_SIZE, 0);
     printf("server resv to my: %s\n", buffer);

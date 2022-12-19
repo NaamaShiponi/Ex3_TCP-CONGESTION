@@ -14,9 +14,12 @@
 
 #define PORT 2020
 #define BUFFER_SIZE 8192
+#define HALF_FILE_SIZE 550570
 
 void resvAndsend(char *msg, int new_socket);
 int questionsContinued(int new_socket);
+void printTime(double renoTime[], int renoTimelen, double cubicTime[], int cubicTimelen);
+
 
 int main()
 {
@@ -114,22 +117,39 @@ int main()
 
 
 
-
-
-
-
 void resvAndsend(char *msg, int new_socket)
 {
+    int countHalfSizeFile=0;
     int valrecv;
     char buffer[BUFFER_SIZE] = {0};
-    printf("i am the server\n");
-    if (valrecv = recv(new_socket, buffer, BUFFER_SIZE, 0) == -1)
+    printf("I'm waiting for the file\n");
+    for (size_t i = 0; i < 67; i++)
     {
+        valrecv=recv(new_socket, buffer, BUFFER_SIZE, 0);
+        if(valrecv==-1){
         printf("recv() in resvAndsend failed: %d \n", errno);
         close(new_socket);
         exit(1);
+        }
     }
-    printf("client send to my: %s\n", buffer);
+    // int count=0;
+    // while(valrecv=recv(new_socket, buffer, BUFFER_SIZE, 0) >0 )
+    // {
+    //     count++;
+    //     printf("const %d\n ",count);
+    //     countHalfSizeFile+=valrecv;
+    //     if(countHalfSizeFile>=BUFFER_SIZE){
+    //         break;
+    //     }
+    // }
+    if(valrecv==-1){
+        printf("recv() in resvAndsend failed: %d \n", errno);
+        close(new_socket);
+        exit(1);
+        }
+   
+    
+    printf("client send file\n");
 
     if (send(new_socket, msg, strlen(msg), 0) == -1)
     {
@@ -137,8 +157,9 @@ void resvAndsend(char *msg, int new_socket)
         close(new_socket);
         exit(1);
     }
-    printf("i recv: %s \n", msg);
+    printf("i send: %s \n", msg);
 }
+
 
 
 
@@ -184,4 +205,45 @@ int questionsContinued(int new_socket){
         exit(1);
     }
 
+}
+
+
+
+void printTime(double renoTime[], int renoTimelen, double cubicTime[], int cubicTimelen)
+{
+
+    printf("\n---------------- Times ----------------\n");
+    double average = 0;
+    printf("Times of the first half file (cubic TCP)\n");
+    for (int i = 1; i < cubicTimelen; i++)
+    {
+
+        printf("message  %d : total time = %f\n", i, cubicTime[i]);
+        average += cubicTime[i];
+    }
+    if (cubicTimelen == 1)
+    {
+        average;
+    }
+    else{
+        average = average / (cubicTimelen - 1);
+    }
+    printf("average times (cubic TCP): %f\n", average);
+
+    average = 0;
+    printf("\nTimes of the second half file (reno TCP)\n");
+    for (int i = 1; i < renoTimelen; i++)
+    {
+        printf("message  %d: total time= %f\n", i, renoTime[i]);
+        average += renoTime[i];
+    }
+     if (renoTimelen == 1)
+    {
+        average;
+    }
+    else{
+    average = average / (renoTimelen - 1);
+    }
+
+    printf("average times(reno TCP): %f\n", average);
 }
