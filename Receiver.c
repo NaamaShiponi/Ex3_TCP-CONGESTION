@@ -26,8 +26,8 @@ double getTime(struct timeval starting_time, struct timeval ending_time);
 int main()
 {
     //Arrays to save the times for each of the algorithms
-    double *arrTimeCubic = (double *)malloc(sizeof(double) * 100);
-    double *arrTimeReno = (double *)malloc(sizeof(double) * 100);
+    double *arrTimeCubic = (double *)malloc(sizeof(double) * 1000);
+    double *arrTimeReno = (double *)malloc(sizeof(double) * 1000);
     int arrTimeCubiclen = 1, arrTimeRenolen = 1;
     //Switch to continue receiving the file again
     int switchToWhile = 1;
